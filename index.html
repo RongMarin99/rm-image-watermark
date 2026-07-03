@@ -114,17 +114,27 @@
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <p class="text-xs text-gray-600 mb-2">Original</p>
-            <img id="origThumb" class="w-full rounded-lg border border-gray-800">
+            <img id="origThumb" class="w-full rounded-lg border border-gray-800 cursor-zoom-in"
+                 onclick="openLightbox(this.src)" title="Click to preview">
           </div>
           <div>
-            <p class="text-xs text-gray-600 mb-2">Result</p>
-            <img id="resultImg" class="w-full rounded-lg border border-gray-800">
+            <p class="text-xs text-gray-600 mb-2">Result — <span class="text-green-500">click to preview</span></p>
+            <img id="resultImg" class="w-full rounded-lg border border-gray-800 cursor-zoom-in"
+                 onclick="openLightbox(this.src)" title="Click to preview">
           </div>
         </div>
         <button onclick="downloadResult()"
                 class="w-full py-2.5 rounded-xl text-sm font-semibold text-white bg-emerald-700 hover:bg-emerald-600 transition-colors">
-          ⬇️ Download
+          ⬇️ Download Result
         </button>
+      </div>
+
+      <!-- Lightbox -->
+      <div id="lightbox"
+           class="fixed inset-0 z-50 hidden items-center justify-center bg-black/90"
+           onclick="closeLightbox()">
+        <button class="absolute top-4 right-5 text-white text-3xl leading-none opacity-70 hover:opacity-100" onclick="closeLightbox()">✕</button>
+        <img id="lightboxImg" class="max-w-[95vw] max-h-[92vh] rounded-lg shadow-2xl object-contain" onclick="event.stopPropagation()">
       </div>
 
     </div>
@@ -462,6 +472,24 @@ function downloadResult() {
   a.download = 'rm-watermark.png';
   a.click();
 }
+
+// ─── Lightbox ─────────────────────────────────────────────────────────────────
+function openLightbox(src) {
+  const lb = document.getElementById('lightbox');
+  document.getElementById('lightboxImg').src = src;
+  lb.classList.remove('hidden');
+  lb.classList.add('flex');
+  document.addEventListener('keydown', onLightboxKey);
+}
+
+function closeLightbox() {
+  const lb = document.getElementById('lightbox');
+  lb.classList.add('hidden');
+  lb.classList.remove('flex');
+  document.removeEventListener('keydown', onLightboxKey);
+}
+
+function onLightboxKey(e) { if (e.key === 'Escape') closeLightbox(); }
 
 function useResultAsInput() {
   if (!S.resultB64) return;
