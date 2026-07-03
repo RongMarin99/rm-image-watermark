@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RM Watermark — Free Watermark Remover</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { background: #07070f; }
+    #canvas-container { display: inline-block; position: relative; }
+    #overlayCanvas { position: absolute; top: 0; left: 0; touch-action: none; }
+  </style>
+</head>
+<body class="text-gray-100 min-h-screen select-none">
+
+  <header class="px-6 py-4 flex items-center justify-between border-b border-gray-800">
+    <div class="flex items-center gap-3">
+      <span class="text-2xl">🧹</span>
+      <div>
+        <span class="font-bold text-white text-lg tracking-tight">RM Watermark</span>
+        <p class="text-xs text-gray-600">Free &amp; open source</p>
+      </div>
+    </div>
+    <a href="https://github.com" target="_blank"
+       class="text-sm text-gray-500 hover:text-white transition-colors">GitHub ↗</a>
+  </header>
+
+  <main class="max-w-5xl mx-auto px-4 py-8 space-y-5">
+
+    <!-- Upload zone -->
+    <div id="uploadZone"
+         class="border-2 border-dashed border-gray-700 rounded-2xl p-16 text-center cursor-pointer hover:border-indigo-500 transition-colors"
+         onclick="fileInput.click()"
+         ondragover="event.preventDefault(); this.classList.add('border-indigo-500')"
+         ondragleave="this.classList.remove('border-indigo-500')"
+         ondrop="handleDrop(event)">
+      <p class="text-5xl mb-4">🖼️</p>
+      <p class="text-gray-300 font-medium">Drop image here or click to upload</p>
+      <p class="text-gray-600 text-sm mt-1">PNG · JPG · WEBP · BMP</p>
+      <input type="file" id="fileInput" accept="image/*" class="hidden" onchange="handleFileInput(event)">
+    </div>
+
+    <!-- Editor (hidden until image loaded) -->
+    <div id="editor" class="hidden space-y-4">
+
+      <!-- Toolbar -->
+      <div class="flex flex-wrap gap-2 items-center">
+        <button id="btn-crop"  onclick="setMode('crop')"  class="mode-btn px-4 py-2 rounded-lg text-sm font-medium transition-colors bg-gray-800 text-gray-400">✂️ Crop</button>
+        <button id="btn-paint" onclick="setMode('paint')" class="mode-btn px-4 py-2 rounded-lg text-sm font-medium transition-colors bg-gray-800 text-gray-400">🖌️ Paint</button>
+        <button id="btn-auto"  onclick="setMode('auto')"  class="mode-btn px-4 py-2 rounded-lg text-sm font-medium transition-colors bg-gray-800 text-gray-400">✨ Auto</button>
+        <div class="flex-1"></div>
+        <button onclick="clearOverlay()" class="px-3 py-2 text-sm rounded-lg bg-gray-800 text-gray-500 hover:text-white transition-colors">Clear</button>
+        <button onclick="resetEditor()"  class="px-3 py-2 text-sm rounded-lg bg-gray-800 text-gray-500 hover:text-white transition-colors">New image</button>
+      </div>
+
+      <!-- Canvas -->
+      <div class="rounded-xl border border-gray-800 bg-gray-950 p-4 overflow-auto max-h-[70vh]">
+        <div id="canvas-container">
+          <canvas id="imageCanvas"></canvas>
+          <canvas id="overlayCanvas" class="cursor-crosshair"></canvas>
+        </div>
+      </div>
+
+      <!-- Crop controls -->
+      <div id="ctrl-crop" class="hidden rounded-xl border border-gray-800 bg-gray-900 p-4 space-y-1">
+        <p class="text-sm text-gray-400"><strong class="text-gray-200">Crop</strong> — draw a rectangle <em>over</em> the watermark; that area is removed and filled automatically.</p>
+        <p id="cropInfo" class="text-xs text-gray-600"></p>
+      </div>
+
+      <!-- Paint controls -->
+      <div id="ctrl-paint" class="hidden rounded-xl border border-gray-800 bg-gray-900 p-4 space-y-3">
+        <p class="text-sm text-gray-400"><strong class="text-gray-200">Paint</strong> — brush over the watermark; the selected area is reconstructed with inpainting.</p>
+        <div class="flex items-center gap-3">
+          <label class="text-sm text-gray-400 w-24 shrink-0">Brush size</label>
+          <input type="range" id="brushSize" min="5" max="100" value="20" class="flex-1 accent-indigo-500"
+                 oninput="brushLabel.textContent = this.value + 'px'">
+          <span id="brushLabel" class="text-sm text-gray-500 w-12 text-right">20px</span>
+        </div>
+      </div>
+
+      <!-- Auto controls -->
+      <div id="ctrl-auto" class="hidden rounded-xl border border-gray-800 bg-gray-900 p-4 space-y-3">
+        <p class="text-sm text-gray-400"><strong class="text-gray-200">Auto</strong> — detects bright and text-pattern watermarks automatically. Adjust sensitivity, then preview before removing.</p>
+        <div class="flex items-center gap-3">
+          <label class="text-sm text-gray-400 w-24 shrink-0">Sensitivity</label>
+          <input type="range" id="sensitivity" min="1" max="100" value="50" class="flex-1 accent-indigo-500"
+                 oninput="sensLabel.textContent = this.value">
+          <span id="sensLabel" class="text-sm text-gray-500 w-8 text-right">50</span>
+        </div>
+        <button onclick="previewAuto()"
+                class="w-full py-2 rounded-lg text-sm font-medium text-white bg-gray-700 hover:bg-gray-600 transition-colors">
+          Preview Detection
+        </button>
+        <p class="text-xs text-gray-600">Red overlay = detected watermark region. Adjust sensitivity if needed, then click Remove Watermark.</p>
+      </div>
+
+      <!-- Process button -->
+      <button id="processBtn" onclick="processImage()"
+              class="w-full py-3 rounded-xl font-semibold text-white bg-indigo-600 hover:bg-indigo-500 transition-colors">
+        Remove Watermark
+      </button>
+
+      <!-- Status bar -->
+      <div id="statusBar" class="hidden text-center text-sm py-1.5 rounded-lg bg-gray-900 text-gray-400"></div>
+
+      <!-- Result section -->
+      <div id="resultSection" class="hidden space-y-4">
+        <div class="flex items-center justify-between">
+          <h3 class="font-semibold text-gray-200">Result</h3>
+          <button onclick="useResultAsInput()" class="text-xs text-indigo-400 hover:text-indigo-300 transition-colors">
+            Continue editing result →
+          </button>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <p class="text-xs text-gray-600 mb-2">Original</p>
+            <img id="origThumb" class="w-full rounded-lg border border-gray-800">
+          </div>
+          <div>
+            <p class="text-xs text-gray-600 mb-2">Result</p>
+            <img id="resultImg" class="w-full rounded-lg border border-gray-800">
+          </div>
+        </div>
+        <button onclick="downloadResult()"
+                class="w-full py-2.5 rounded-xl text-sm font-semibold text-white bg-emerald-700 hover:bg-emerald-600 transition-colors">
+          ⬇️ Download
+        </button>
+      </div>
+
+    </div>
+  </main>
+
+  <footer class="text-center py-8 text-gray-700 text-xs">
+    MIT License · Open source · Images processed server-side, never stored
+  </footer>
+
+<script>
+// ─── State ────────────────────────────────────────────────────────────────────
+const S = {
+  mode: 'paint',
+  imageEl: null,
+  imageB64: null,
+  origB64: null,
+  scale: { x: 1, y: 1 },
+  drawing: false,
+  cropStart: null,
+  cropRect: null,
+  sampledColor: null,
+  resultB64: null,
+};
+
+let C, O, ctx, octx;
+
+window.addEventListener('DOMContentLoaded', () => {
+  C    = document.getElementById('imageCanvas');
+  O    = document.getElementById('overlayCanvas');
+  ctx  = C.getContext('2d');
+  octx = O.getContext('2d');
+
+  O.addEventListener('mousedown',  onDown);
+  O.addEventListener('mousemove',  onMove);
+  O.addEventListener('mouseup',    onUp);
+  O.addEventListener('mouseleave', () => { S.drawing = false; });
+  O.addEventListener('touchstart', e => { e.preventDefault(); onDown(e.touches[0]); },       { passive: false });
+  O.addEventListener('touchmove',  e => { e.preventDefault(); onMove(e.touches[0]); },       { passive: false });
+  O.addEventListener('touchend',   e => { onUp(e.changedTouches[0]); });
+});
+
+// ─── Upload ───────────────────────────────────────────────────────────────────
+function handleFileInput(e) { if (e.target.files[0]) loadFile(e.target.files[0]); }
+
+function handleDrop(e) {
+  e.preventDefault();
+  e.currentTarget.classList.remove('border-indigo-500');
+  const f = e.dataTransfer.files[0];
+  if (f?.type.startsWith('image/')) loadFile(f);
+}
+
+async function loadFile(file) {
+  const b64 = await compressImage(file);
+  S.imageB64 = S.origB64 = b64;
+  const img = new Image();
+  img.onload = () => {
+    S.imageEl = img;
+    document.getElementById('uploadZone').classList.add('hidden');
+    document.getElementById('editor').classList.remove('hidden');
+    setupCanvas(img);   // must run after editor is visible so clientWidth is non-zero
+    setMode('paint');
+  };
+  img.src = b64;
+}
+
+function compressImage(file) {
+  return new Promise(resolve => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      const img = new Image();
+      img.onload = () => {
+        const MAX = 1920;
+        let w = img.naturalWidth, h = img.naturalHeight;
+        if (w > MAX || h > MAX) {
+          const r = Math.min(MAX / w, MAX / h);
+          w = Math.round(w * r);
+          h = Math.round(h * r);
+        }
+        const c = document.createElement('canvas');
+        c.width = w; c.height = h;
+        c.getContext('2d').drawImage(img, 0, 0, w, h);
+        resolve(c.toDataURL('image/jpeg', 0.92));
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function setupCanvas(img) {
+  const parentW = document.getElementById('canvas-container').parentElement.clientWidth || 800;
+  const maxW = Math.min(img.naturalWidth, parentW - 32);
+  const ratio = maxW / img.naturalWidth;
+  const dW = Math.round(img.naturalWidth  * ratio);
+  const dH = Math.round(img.naturalHeight * ratio);
+
+  C.width = O.width  = dW;
+  C.height = O.height = dH;
+  S.scale = { x: img.naturalWidth / dW, y: img.naturalHeight / dH };
+
+  ctx.drawImage(img, 0, 0, dW, dH);
+  octx.clearRect(0, 0, dW, dH);
+}
+
+// ─── Mode ─────────────────────────────────────────────────────────────────────
+function setMode(mode) {
+  S.mode = mode;
+  ['crop', 'paint', 'auto'].forEach(m => {
+    const active = m === mode;
+    const btn  = document.getElementById(`btn-${m}`);
+    const ctrl = document.getElementById(`ctrl-${m}`);
+    btn.classList.toggle('bg-indigo-600', active);
+    btn.classList.toggle('text-white',    active);
+    btn.classList.toggle('bg-gray-800',  !active);
+    btn.classList.toggle('text-gray-400',!active);
+    ctrl.classList.toggle('hidden', !active);
+  });
+  O.style.cursor = mode === 'auto' ? 'cell' : 'crosshair';
+  clearOverlay();
+}
+
+function clearOverlay() {
+  octx.clearRect(0, 0, O.width, O.height);
+  S.cropStart = S.cropRect = null;
+  S.drawing = false;
+  document.getElementById('cropInfo').textContent = '';
+}
+
+function resetEditor() {
+  document.getElementById('uploadZone').classList.remove('hidden');
+  document.getElementById('editor').classList.add('hidden');
+  document.getElementById('resultSection').classList.add('hidden');
+  document.getElementById('fileInput').value = '';
+  S.imageB64 = S.origB64 = S.imageEl = S.sampledColor = S.resultB64 = null;
+}
+
+// ─── Pointer helpers ──────────────────────────────────────────────────────────
+function getPos(e) {
+  const r = O.getBoundingClientRect();
+  return {
+    x: Math.max(0, Math.min(O.width,  e.clientX - r.left)),
+    y: Math.max(0, Math.min(O.height, e.clientY - r.top)),
+  };
+}
+
+function onDown(e) {
+  const p = getPos(e);
+  if      (S.mode === 'paint') { S.drawing = true; paintAt(p); }
+  else if (S.mode === 'crop')  { S.drawing = true; S.cropStart = p; }
+  // auto mode: no canvas interaction — preview button handles it
+}
+
+function onMove(e) {
+  if (!S.drawing) return;
+  const p = getPos(e);
+  if      (S.mode === 'paint') paintAt(p);
+  else if (S.mode === 'crop')  drawCropRect(p);
+}
+
+function onUp(e) {
+  if (S.drawing && S.mode === 'crop' && S.cropStart && e) {
+    S.cropRect = normRect(S.cropStart, getPos(e));
+    showCropInfo();
+  }
+  S.drawing = false;
+}
+
+function normRect(a, b) {
+  return {
+    x: Math.round(Math.min(a.x, b.x)),
+    y: Math.round(Math.min(a.y, b.y)),
+    w: Math.round(Math.abs(b.x - a.x)),
+    h: Math.round(Math.abs(b.y - a.y)),
+  };
+}
+
+// ─── Paint ────────────────────────────────────────────────────────────────────
+function paintAt(p) {
+  const r = parseInt(document.getElementById('brushSize').value) / 2;
+  octx.fillStyle = 'rgba(239,68,68,0.65)';
+  octx.beginPath();
+  octx.arc(p.x, p.y, r, 0, Math.PI * 2);
+  octx.fill();
+}
+
+function getMaskB64() {
+  const mc   = document.createElement('canvas');
+  mc.width   = O.width;
+  mc.height  = O.height;
+  const mctx = mc.getContext('2d');
+  const src  = octx.getImageData(0, 0, O.width, O.height);
+  const dst  = mctx.createImageData(O.width, O.height);
+  for (let i = 0; i < src.data.length; i += 4) {
+    const v = src.data[i + 3] > 50 ? 255 : 0;
+    dst.data[i] = dst.data[i+1] = dst.data[i+2] = v;
+    dst.data[i+3] = 255;
+  }
+  mctx.putImageData(dst, 0, 0);
+  return mc.toDataURL('image/png');
+}
+
+function hasPaintStroke() {
+  const d = octx.getImageData(0, 0, O.width, O.height).data;
+  for (let i = 3; i < d.length; i += 4) if (d[i] > 50) return true;
+  return false;
+}
+
+// ─── Crop ─────────────────────────────────────────────────────────────────────
+function drawCropRect(cur) {
+  octx.clearRect(0, 0, O.width, O.height);
+  const r = normRect(S.cropStart, cur);
+  octx.fillStyle = 'rgba(0,0,0,0.55)';
+  octx.fillRect(0, 0, O.width, O.height);
+  octx.clearRect(r.x, r.y, r.w, r.h);
+  octx.strokeStyle = '#818cf8';
+  octx.lineWidth = 2;
+  octx.setLineDash([6, 4]);
+  octx.strokeRect(r.x + 1, r.y + 1, r.w - 2, r.h - 2);
+  octx.setLineDash([]);
+}
+
+function showCropInfo() {
+  if (!S.cropRect) return;
+  const { w, h } = S.cropRect;
+  document.getElementById('cropInfo').textContent =
+    `Selection: ${Math.round(w * S.scale.x)} × ${Math.round(h * S.scale.y)} px — this area will be removed`;
+}
+
+// ─── Auto ─────────────────────────────────────────────────────────────────────
+async function previewAuto() {
+  if (!S.imageB64) return;
+  const btn = document.querySelector('button[onclick="previewAuto()"]');
+  btn.disabled = true;
+  btn.textContent = '⏳ Detecting…';
+  setStatus('Detecting watermark…', 'info');
+  try {
+    const res  = await fetch('/api/process', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        mode: 'auto',
+        image: S.imageB64,
+        sensitivity: parseInt(document.getElementById('sensitivity').value),
+        preview: true,
+      }),
+    });
+    let json;
+    try { json = await res.json(); } catch { throw new Error(`Server error ${res.status}`); }
+    if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+
+    // Show preview overlay on canvas (original preserved in S.imageB64)
+    const previewImg = new Image();
+    previewImg.onload = () => {
+      ctx.drawImage(previewImg, 0, 0, C.width, C.height);
+      setStatus('Red = detected watermark. Adjust sensitivity if needed, then click Remove Watermark.', 'info');
+    };
+    previewImg.src = json.preview;
+    // Restore original image on canvas next time user interacts
+    O.style.pointerEvents = 'none';
+  } catch (err) {
+    setStatus(`✗ ${err.message}`, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Preview Detection';
+  }
+}
+
+// ─── Process ──────────────────────────────────────────────────────────────────
+async function processImage() {
+  if (!S.imageB64) return;
+
+  const payload = { mode: S.mode, image: S.imageB64 };
+
+  if (S.mode === 'crop') {
+    if (!S.cropRect || S.cropRect.w < 5 || S.cropRect.h < 5)
+      return setStatus('Draw a selection first', 'error');
+    payload.x = Math.round(S.cropRect.x * S.scale.x);
+    payload.y = Math.round(S.cropRect.y * S.scale.y);
+    payload.w = Math.round(S.cropRect.w * S.scale.x);
+    payload.h = Math.round(S.cropRect.h * S.scale.y);
+
+  } else if (S.mode === 'paint') {
+    if (!hasPaintStroke())
+      return setStatus('Paint over the watermark first', 'error');
+    payload.mask = getMaskB64();
+
+  } else if (S.mode === 'auto') {
+    payload.sensitivity = parseInt(document.getElementById('sensitivity').value);
+  }
+
+  const btn = document.getElementById('processBtn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Processing…';
+  btn.classList.replace('bg-indigo-600', 'bg-indigo-800');
+  setStatus('Sending to server…', 'info');
+
+  try {
+    const res  = await fetch('/api/process', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    let json;
+    try { json = await res.json(); }
+    catch { throw new Error(`Server error ${res.status} — is the Flask server running?`); }
+    if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+
+    S.resultB64 = json.result;
+    document.getElementById('origThumb').src = S.origB64;
+    document.getElementById('resultImg').src  = json.result;
+    document.getElementById('resultSection').classList.remove('hidden');
+    document.getElementById('resultSection').scrollIntoView({ behavior: 'smooth' });
+    setStatus('✓ Done!', 'success');
+
+  } catch (err) {
+    setStatus(`✗ ${err.message}`, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Remove Watermark';
+    btn.classList.replace('bg-indigo-800', 'bg-indigo-600');
+  }
+}
+
+function setStatus(msg, type) {
+  const el = document.getElementById('statusBar');
+  el.classList.remove('hidden');
+  el.textContent = msg;
+  el.style.color = { error: '#f87171', success: '#4ade80', info: '#9ca3af' }[type] ?? '#9ca3af';
+}
+
+function downloadResult() {
+  if (!S.resultB64) return;
+  const a = document.createElement('a');
+  a.href = S.resultB64;
+  a.download = 'rm-watermark.png';
+  a.click();
+}
+
+function useResultAsInput() {
+  if (!S.resultB64) return;
+  const img = new Image();
+  img.onload = () => {
+    S.imageEl  = img;
+    S.imageB64 = S.resultB64;
+    setupCanvas(img);
+    clearOverlay();
+    document.getElementById('resultSection').classList.add('hidden');
+    setStatus('Now editing the result — apply another pass', 'info');
+  };
+  img.src = S.resultB64;
+}
+</script>
+</body>
+</html>
